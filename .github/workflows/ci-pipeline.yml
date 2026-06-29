@@ -6,9 +6,11 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  PYTHON_VERSION: "3.12"
-  TF_VERSION: ".9.8"
-  PKR_VERSION: "1.11.2"
+  PYTHON_VERSION: 3.12
+  ANSIBLE_CORE_VERSION: 2.21
+  ANSIBLE_LINT_VERSION: 26.4.0
+  TF_VERSION: 1.15.7
+  PKR_VERSION: 1.15.4
 
 jobs:
   lint-and-validation:
@@ -25,7 +27,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install Ansible & Ansible-Lint
-        run: pip install ansible-core ansible-lint
+        run: pip install "ansible-core==${{ env.ANSIBLE_CORE_VERSION }}" "ansible-lint==${{ env.ANSIBLE_LINT_VERSION }}"
 
       - name: Setup HashiCorp Tools (Terraform & Packer)
         uses: hashicorp/setup-terraform@v3
@@ -43,16 +45,19 @@ jobs:
 
       - name: Run Ansible Lint
         run: ansible-lint playbooks/
-      
+
       - name: Check `catalog.yml` has valid fields
         run: python3 scripts/validate-catalog.py
 
       - name: Validate Packer HCL
+        env:
+          PKR_VAR_app_id: ci-validation
+          PKR_VAR_ami_name_prefix: ci-validation
+          PKR_VAR_instance_type: t2.micro
+          PKR_VAR_playbook_path: playbooks/laravel.yml
         run: |
-          for template in packer/*.pkr.hcl; do
-            packer init "$template"
-            packer validate "$template"
-          done
+          packer init template.pkr.hcl
+          packer validate template.pkr.hcl
 
       - name: Check Terraform Formatting
         run: terraform fmt -check
@@ -83,6 +88,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform Integration Plan
+        env:
+          TF_VAR_ami_source: public
         run: |
           terraform init
           terraform plan -detailed-exitcode

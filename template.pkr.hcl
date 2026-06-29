@@ -5,10 +5,25 @@ packer {
   }
 }
 
-variable "app_id" { type = string }
-variable "ami_name_prefix" { type = string }
-variable "instance_type" { type = string }
-variable "playbook_path" { type = string }
+variable "app_id" {
+  type    = string
+  default = "ci-validation"
+}
+
+variable "ami_name_prefix" {
+  type    = string
+  default = "ci-validation"
+}
+
+variable "instance_type" {
+  type    = string
+  default = "t2.micro"
+}
+
+variable "playbook_path" {
+  type    = string
+  default = "playbooks/laravel.yml"
+}
 
 source "amazon-ebs" "ubuntu" {
   ami_name      = "${var.ami_name_prefix}-{{timestamp}}"

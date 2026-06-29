@@ -1,0 +1,16 @@
+---
+- name: Provision Node.js Environment
+  hosts: all
+  become: true
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install Node.js Dependencies
+      ansible.builtin.apt:
+        name:
+          - nodejs
+          - npm
+          - git
+        state: present

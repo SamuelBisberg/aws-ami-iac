@@ -1,0 +1,88 @@
+name: CI Pipeline - Validation & Testing
+
+on:
+  push:
+  pull_request:
+
+env:
+  AWS_REGION: us-east-1
+  PYTHON_VERSION: "3.12"
+  TF_VERSION: ".9.8"
+  PKR_VERSION: "1.11.2"
+
+jobs:
+  lint-and-validation:
+    name: Tests (Ansible, Packer, TF)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (for Ansible)
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Ansible & Ansible-Lint
+        run: pip install ansible-core ansible-lint
+
+      - name: Setup HashiCorp Tools (Terraform & Packer)
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PKR_VERSION }}
+
+      - name: Check Ansible Syntax
+        run: |
+          for playbook in playbooks/*.yml; do
+            ansible-playbook --syntax-check "$playbook"
+          done
+
+      - name: Run Ansible Lint
+        run: ansible-lint playbooks/
+      
+      - name: Check `catalog.yml` has valid fields
+        run: python3 scripts/validate-catalog.py
+
+      - name: Validate Packer HCL
+        run: |
+          for template in packer/*.pkr.hcl; do
+            packer init "$template"
+            packer validate "$template"
+          done
+
+      - name: Check Terraform Formatting
+        run: terraform fmt -check
+
+      - name: Validate Terraform Syntax
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint-and-validation
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # Provide AWS Credentials so Terraform can authenticate with the AWS API
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Integration Plan
+        run: |
+          terraform init
+          terraform plan -detailed-exitcode

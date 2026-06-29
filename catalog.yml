@@ -1,0 +1,33 @@
+images:
+  - id: laravel
+    name: Laravel App
+    description: Standard PHP 8.x + FPM + Nginx environment tailored for Laravel applications.
+    tags: [php, nginx, backend]
+    playbook: playbooks/laravel.yml
+    instance_type: t2.micro
+    ami_filter_name: laravel-app-*
+    http_port: 80
+    args:
+      - php_version: 8.2
+      - nginx_version: 1.24
+      - composer_version: 2.6
+      - nodejs_version: 20.x
+      - npm_version: 10.x
+      - yarn_version: 1.22
+      - redis_version: 7.x
+      - mysql_version: 8.x
+      - postgresql_version: 15.x
+
+  - id: nodejs
+    name: Node.js App
+    description: Node.js and NPM environment optimized for JavaScript/TypeScript APIs.
+    tags: [javascript, api, frontend]
+    playbook: playbooks/nodejs.yml
+    instance_type: t2.small
+    ami_filter_name: nodejs-app-*
+    http_port: 3000
+    args:
+      - nodejs_version: 20.x
+      - npm_version: 10.x
+      - yarn_version: 1.22
+      - pm2_version: 5.x

@@ -1,0 +1,73 @@
+name: CD Pipeline - Dynamic Bake & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  prepare-matrix:
+    name: Parse Catalog Array
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Matrix JSON
+        id: set-matrix
+        run: |
+          MATRIX_JSON=$(yq -c '[.images[].id]' catalog.yml)
+          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+
+  bake-images:
+    name: Bake AMIs
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - uses: hashicorp/setup-packer@main
+
+      - name: Prepare Dynamic Variables
+        run: |
+          APP_ID="${{ matrix.app }}"
+          INSTANCE_TYPE=$(yq -r ".images[] | select(.id == \"$APP_ID\") | .instance_type" catalog.yml)
+          PLAYBOOK=$(yq -r ".images[] | select(.id == \"$APP_ID\") | .playbook" catalog.yml)
+          RAW_FILTER=$(yq -r ".images[] | select(.id == \"$APP_ID\") | .ami_filter_name" catalog.yml)
+
+          echo "PKR_VAR_app_id=$APP_ID" >> $GITHUB_ENV
+          echo "PKR_VAR_instance_type=$INSTANCE_TYPE" >> $GITHUB_ENV
+          echo "PKR_VAR_playbook_path=$PLAYBOOK" >> $GITHUB_ENV
+          echo "PKR_VAR_ami_name_prefix=${RAW_FILTER%-*}" >> $GITHUB_ENV
+
+          yq -o=json ".images[] | select(.id == \"$APP_ID\") | .args | map(to_entries) | flatten | from_entries" catalog.yml > packer_vars.json
+
+      - name: Build AMI
+        run: packer init template.pkr.hcl && packer build template.pkr.hcl
+
+  create-release:
+    name: Create GitHub Release
+    needs: bake-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Release Notes
+        run: |
+          echo "### 🚀 Automated Infrastructure Release" > release_notes.md
+          echo "Golden AMIs have been successfully baked and are ready for deployment." >> release_notes.md
+          echo "" >> release_notes.md
+          yq '.images[] | "- **" + .name + "**: " + .description + " `[" + (.tags | join(", ")) + "]`"' catalog.yml >> release_notes.md
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: Release ${{ github.ref_name }}
+          body_path: release_notes.md
